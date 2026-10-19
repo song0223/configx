@@ -219,7 +219,14 @@ class Updater
 
     public static function saveOptions($id, $cx_options, Request $request)
     {
-        if (empty($request->values['c_type']) || empty($request->values['c_key'])) {
+        // normalize form input: missing keys used to fatal (ErrorException on
+        // undefined index) - every field falls back to an empty string
+        $values = (array) ($request->values ?? []);
+        foreach (['c_type', 'c_key', 'c_name', 'c_element', 'c_help', 'c_options'] as $field) {
+            $values[$field] = isset($values[$field]) ? (string) $values[$field] : '';
+        }
+
+        if (empty($values['c_type']) || empty($values['c_key'])) {
             admin_warning('Error', trans('admin.input') . ' ' . trans('admin.configx.new_config_type') . ' / ' . trans('admin.configx.new_config_key'));
             return redirect()->back()->withInput();
         }
@@ -229,23 +236,23 @@ class Updater
             $config = ConfigxModel::findOrFail($id);
             $new_key = $config['name'];
         } else {
-            $new_key = $request->values['c_key'];
-            if (!preg_match('/^' . $request->values['c_type'] . '\.\w{1,}/', $new_key)) {
-                $new_key = $request->values['c_type'] . '.' . $new_key;
+            $new_key = $values['c_key'];
+            if (!preg_match('/^' . preg_quote($values['c_type'], '/') . '\.\w{1,}/', $new_key)) {
+                $new_key = $values['c_type'] . '.' . $new_key;
             }
             if (ConfigxModel::where('name', $new_key)->first()) {
                 admin_warning('Error', "The key `{$new_key}` exists in table.");
                 return redirect()->back()->withInput();
             }
-            if ($request->values['c_element'] == "date") {
+            if ($values['c_element'] == "date") {
                 $defaultVal = "2019-01-01";
-            } else if ($request->values['c_element'] == "datetime") {
+            } else if ($values['c_element'] == "datetime") {
                 $defaultVal = "2019-01-01 01:01:01";
-            } else if ($request->values['c_element'] == "icon") {
+            } else if ($values['c_element'] == "icon") {
                 $defaultVal = "fa-code";
-            } else if ($request->values['c_element'] == "color") {
+            } else if ($values['c_element'] == "color") {
                 $defaultVal = "#ccc";
-            } else if ($request->values['c_element'] == "multiple_image") {
+            } else if ($values['c_element'] == "multiple_image") {
                 $defaultVal = '-';
             }
         }
@@ -260,8 +267,8 @@ class Updater
         }
         $table_field = isset($cx_options[$new_key]['table_field']);
         $order = Arr::get($cx_options[$new_key], 'order', 999);
-        if (!empty($request->values['c_options'])) {
-            $c_options = explode(PHP_EOL, $request->values['c_options']);
+        if (!empty($values['c_options'])) {
+            $c_options = explode(PHP_EOL, $values['c_options']);
             $arr = [];
             foreach ($c_options as $op) {
                 $kv = explode(":", $op);
@@ -271,31 +278,31 @@ class Updater
                 if (count($kv) == 2) {
                     $arr[trim($kv[0])] = trim($kv[1]);
                 } else if (count($kv) > 2) {
-                    $values = array_slice($kv, 1);
-                    $arr[trim($kv[0])] = trim(implode(':', $values));
+                    $optionValues = array_slice($kv, 1);
+                    $arr[trim($kv[0])] = trim(implode(':', $optionValues));
                 } else {
                     $arr[trim($kv[0])] = trim($kv[0]);
                 }
             }
-            $cx_options[$new_key] = ['options' => $arr, 'element' => $request->values['c_element'], 'help' => $request->values['c_help'], 'name' => $request->values['c_name'], 'order' => 999];
+            $cx_options[$new_key] = ['options' => $arr, 'element' => $values['c_element'], 'help' => $values['c_help'], 'name' => $values['c_name'], 'order' => 999];
             $keys = array_keys($arr);
-            if ($request->values['c_element'] == "table") {
+            if ($values['c_element'] == "table") {
                 $defaultVal = 'do not delete';
             } else if (in_array(
-                $request->values['c_element'],
+                $values['c_element'],
                 ['radio_group', 'checkbox_group', 'select', 'multiple_select', 'listbox']
             ) && $keys) {
                 $defaultVal = $keys[0];
             }
         } else {
-            if (in_array($request->values['c_element'], ['radio_group', 'checkbox_group', 'select', 'table', 'multiple_select', 'listbox'])) {
+            if (in_array($values['c_element'], ['radio_group', 'checkbox_group', 'select', 'table', 'multiple_select', 'listbox'])) {
                 admin_warning('Error', "The options is empty!");
                 return redirect()->back()->withInput();
             } else {
-                $cx_options[$new_key] = ['options' => [], 'element' => $request->values['c_element'], 'help' => $request->values['c_help'], 'name' => $request->values['c_name'], 'order' => 999];
+                $cx_options[$new_key] = ['options' => [], 'element' => $values['c_element'], 'help' => $values['c_help'], 'name' => $values['c_name'], 'order' => 999];
             }
         }
-        if ($request->values['c_element'] == 'table' && empty($request->table)) {
+        if ($values['c_element'] == 'table' && empty($request->table)) {
             admin_warning('Error', "Build table befor save!");
             return redirect()->back()->withInput();
         }
@@ -303,18 +310,18 @@ class Updater
             if (preg_match('/\$admin\$/i', $new_key)) {
                 $defaultVal = 'do not delete';
             }
-            $data = ['name' => $new_key, 'value' => $defaultVal, 'description' => $request->values['c_name'] ?: trans('admin.configx.' . $new_key)];
-            if ($request->values['c_element'] == "table") {
+            $data = ['name' => $new_key, 'value' => $defaultVal, 'description' => $values['c_name'] ?: trans('admin.configx.' . $new_key)];
+            if ($values['c_element'] == "table") {
                 $table = Tool::checkTableKeys($new_key, $request->table);
                 $cx_options = Tool::createTableConfigs($table, $cx_options);
                 $data['description'] = json_encode($table);
             }
             $config = new ConfigxModel($data);
             $config->save();
-            $c_type = $request->values['c_type'];
+            $c_type = $values['c_type'];
         } else {
             $data = ['name' => $new_key];
-            if ($request->values['c_element'] == "table") {
+            if ($values['c_element'] == "table") {
                 $table = Tool::checkTableKeys($new_key, $request->table);
                 $cx_options = Tool::createTableConfigs($table, $cx_options);
                 $data['description'] = json_encode($table);

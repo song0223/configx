@@ -53,7 +53,7 @@ class ConfigxController extends Controller
 
         if ($do == 'tabs_config') {
 
-            return Updater::saveTabsOptions($id, $request->values['c_tabs_options']);
+            return Updater::saveTabsOptions($id, (string) ($request->values['c_tabs_options'] ?? ''));
         }
 
         if ($do == 'new_config' || $do == 'backup') {
